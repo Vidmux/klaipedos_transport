@@ -96,7 +96,7 @@ class BusGPSEntity(CoordinatorEntity, TrackerEntity):
         self._lat = lat
         self._lon = lon
 
-        self._attr_name = f"Bus {route} #{bus_id}"
+        self._attr_name = f"{route}"
         self._attr_unique_id = f"klaipeda_route_{route}_bus_{bus_id}".lower()
         self._attr_source_type = SOURCE_TYPE_GPS
 
@@ -128,3 +128,4 @@ class BusGPSEntity(CoordinatorEntity, TrackerEntity):
             "manufacturer": "Klaipėdos transportas",
             "model": f"Route {self._route}",
         }
+
