@@ -7,11 +7,12 @@
 Ši integracija leidžia stebėti Klaipėdos autobusų judėjimą Home Assistant.  
 
 **Įdiegimas:**
-1. Įdiekite per **HACS** https://github.com/Vidmux/klaipedos_transport/
-2. Po įdiegimo pridėkite prie **Devices ant integrations**: Klaipėdos viešasis transportas
-3. Laukelye: **route** įrašote maršruto numerį pvz: 4G, 14 ir t.t.
-4. Jei yra noras turėti kelis maršrutus 2 ir 3 punktus reikia pakartoti.
-5. Pagal maršrutą automatiškai bus sukuriami `device_tracker` objektai.
+1. Įdiekite per **HACS** auto-entities
+2. Įdiekite per **HACS** https://github.com/Vidmux/klaipedos_transport/
+3. Po įdiegimo pridėkite prie **Devices ant integrations**: Klaipėdos viešasis transportas
+4. Laukelye: **route** įrašote maršruto numerį pvz: 4G, 14 ir t.t.
+5. Jei yra noras turėti kelis maršrutus 2 ir 3 punktus reikia pakartoti.
+6. Pagal maršrutą automatiškai bus sukuriami `device_tracker` objektai.
 
 **Pavyzdinė `Lovelace` kortelė:**
 
@@ -24,10 +25,10 @@ card:
   dark_mode: false
 filter:
   include:
-    - entity_id: device_tracker.vln_4g_*
+    - entity_id: device_tracker.klp_4g_*
       options:
         name: "4G"
-    - entity_id: device_tracker.vln_3g_*
+    - entity_id: device_tracker.klp_3g_*
       options:
         name: "3G"
 show_empty: true
