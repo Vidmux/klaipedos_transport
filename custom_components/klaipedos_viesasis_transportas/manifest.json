@@ -1,7 +1,7 @@
 {
   "domain": "klaipedos_viesasis_transportas",
   "name": "Klaipėdos viešasis transportas",
-  "version": "1.1.10",
+  "version": "1.1.11",
   "documentation": "https://github.com/Vidmux/klaipedos_transport",
   "issue_tracker": "https://github.com/Vidmux/klaipedos_transport/issues",
   "dependencies": [],
@@ -10,5 +10,6 @@
   "iot_class": "cloud_polling",
   "integration_type": "device_tracker"
 }
+
 
 
