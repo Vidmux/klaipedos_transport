@@ -34,7 +34,7 @@ class KlaipedaTrackerManager:
             found = [l.split(",") for l in lines if len(l.split(",")) >= 6 and l.split(",")[1].upper() == self.route]
 
             for i in range(15): # Stebime iki 15 autobusų
-                dev_id = f"vln_{self.route.lower()}_{i+1}"
+                dev_id = f"klp_{self.route.lower()}_{i+1}"
                 if i < len(found):
                     bus = found[i]
                     self.hass.states.async_set(
@@ -61,3 +61,4 @@ class KlaipedaTrackerManager:
         req = urllib.request.Request(f"{URL}?t={int(time.time())}", headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req, timeout=5) as r:
             return r.read().decode("utf-8")
+
