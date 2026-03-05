@@ -2,25 +2,11 @@
   "domain": "klaipedos_viesasis_transportas",
   "name": "Klaipėdos viešasis transportas",
   "version": "1.1.9",
-  "documentation": "https://github.com/andiukas/klaipedos_transport",
-  "issue_tracker": "https://github.com/andiukas/klaipedos_transport/issues",
+  "documentation": "https://github.com/Vidmux/klaipedos_transport",
+  "issue_tracker": "https://github.com/Vidmux/klaipedos_transport/issues",
   "dependencies": [],
   "codeowners": ["@andiukas"],
   "config_flow": true,
   "iot_class": "cloud_polling",
   "integration_type": "device_tracker"
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
