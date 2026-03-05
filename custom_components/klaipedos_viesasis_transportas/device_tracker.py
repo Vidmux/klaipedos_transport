@@ -7,57 +7,82 @@ from homeassistant.helpers.event import async_track_time_interval
 _LOGGER = logging.getLogger(__name__)
 URL = "https://www.stops.lt/klaipeda/gps_full.txt"
 
+
 async def async_setup_entry(hass, entry, async_add_entities):
-    """Ši funkcija paleidžiama, kai HA krauna device_tracker platformą."""
-    route = entry.data.get("route", "3G").upper()
-    
-    # Sukuriame valdytoją, kuris tiesiogiai atnaujins būsenas
-    tracker_manager = KlaipedaTrackerManager(hass, route)
-    
-    async_track_time_interval(hass, tracker_manager.update_data, timedelta(seconds=30))
-    await tracker_manager.update_data()
-    
+    """Paleidžiama kai HA startuoja integraciją."""
+    manager = KlaipedaTrackerManager(hass)
+
+    async_track_time_interval(hass, manager.update_data, timedelta(seconds=30))
+    await manager.update_data()
+
     return True
 
+
 class KlaipedaTrackerManager:
-    def __init__(self, hass, route):
+    def __init__(self, hass):
         self.hass = hass
-        self.route = route
+        self.known = set()
 
     async def update_data(self, now=None):
         try:
-            # Duomenų gavimas
             text = await self.hass.async_add_executor_job(self._fetch)
-            if not text: return
+            if not text:
+                return
 
             lines = text.splitlines()
-            found = [l.split(",") for l in lines if len(l.split(",")) >= 6 and l.split(",")[1].upper() == self.route]
+            current = set()
 
-            for i in range(15): # Stebime iki 15 autobusų
-                dev_id = f"klp_{self.route.lower()}_{i+1}"
-                if i < len(found):
-                    bus = found[i]
-                    self.hass.states.async_set(
-                        f"device_tracker.{dev_id}",
-                        "home",
-                        {
-                            "latitude": int(bus[5])/1000000,
-                            "longitude": int(bus[4])/1000000,
-                            "source_type": "gps",
-                            "friendly_name": f"{self.route} Autobusas {i+1}",
-                            "icon": "mdi:bus",
-                            "masinos_nr": bus[3]
-                        }
-                    )
-                else:
-                    # Jei autobuso nėra, bet esybė egzistuoja - pažymime, kad nebevažiuoja
-                    state = self.hass.states.get(f"device_tracker.{dev_id}")
-                    if state and state.state != "not_home":
-                        self.hass.states.async_set(f"device_tracker.{dev_id}", "not_home", state.attributes)
+            for line in lines:
+                parts = line.split(",")
+
+                if len(parts) < 6:
+                    continue
+
+                route = parts[1].upper()
+                vehicle_id = parts[3]
+
+                try:
+                    lon = int(parts[4]) / 1000000
+                    lat = int(parts[5]) / 1000000
+                except:
+                    continue
+
+                current.add(vehicle_id)
+
+                entity_id = f"device_tracker.klp_bus_{vehicle_id}"
+
+                self.hass.states.async_set(
+                    entity_id,
+                    "home",
+                    {
+                        "latitude": lat,
+                        "longitude": lon,
+                        "source_type": "gps",
+                        "friendly_name": route,
+                        "icon": "mdi:bus",
+                        "route": route,
+                        "vehicle_id": vehicle_id,
+                    },
+                )
+
+            # dingę autobusai
+            for old in self.known - current:
+                entity_id = f"device_tracker.klp_bus_{old}"
+                state = self.hass.states.get(entity_id)
+
+                if state and state.state != "not_home":
+                    self.hass.states.async_set(entity_id, "not_home", state.attributes)
+
+            self.known = current
+
         except Exception as e:
-            _LOGGER.error("Klaida: %s", e)
+            _LOGGER.error("Klaipėdos transporto klaida: %s", e)
 
     def _fetch(self):
-        req = urllib.request.Request(f"{URL}?t={int(time.time())}", headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=5) as r:
+        req = urllib.request.Request(
+            f"{URL}?t={int(time.time())}",
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+
+        with urllib.request.urlopen(req, timeout=10) as r:
             return r.read().decode("utf-8")
