@@ -1,88 +1,37 @@
-import logging
-import urllib.request
-import time
-from datetime import timedelta
-from homeassistant.helpers.event import async_track_time_interval
+import requests
 
-_LOGGER = logging.getLogger(__name__)
-URL = "https://www.stops.lt/klaipeda/gps_full.txt"
-
-
-async def async_setup_entry(hass, entry, async_add_entities):
-    """Paleidžiama kai HA startuoja integraciją."""
-    manager = KlaipedaTrackerManager(hass)
-
-    async_track_time_interval(hass, manager.update_data, timedelta(seconds=30))
-    await manager.update_data()
-
-    return True
-
-
-class KlaipedaTrackerManager:
-    def __init__(self, hass):
-        self.hass = hass
-        self.known = set()
-
-    async def update_data(self, now=None):
-        try:
-            text = await self.hass.async_add_executor_job(self._fetch)
-            if not text:
-                return
-
-            lines = text.splitlines()
-            current = set()
-
-            for line in lines:
-                parts = line.split(",")
-
-                if len(parts) < 6:
-                    continue
-
-                route = parts[1].upper()
-                vehicle_id = parts[3]
-
-                try:
-                    lon = int(parts[4]) / 1000000
-                    lat = int(parts[5]) / 1000000
-                except:
-                    continue
-
-                current.add(vehicle_id)
-
-                entity_id = f"device_tracker.klp_bus_{vehicle_id}"
-
-                self.hass.states.async_set(
-                    entity_id,
-                    "home",
-                    {
-                        "latitude": lat,
-                        "longitude": lon,
-                        "source_type": "gps",
-                        "friendly_name": route,
-                        "icon": "mdi:bus",
-                        "route": route,
-                        "vehicle_id": vehicle_id,
-                    },
-                )
-
-            # dingę autobusai
-            for old in self.known - current:
-                entity_id = f"device_tracker.klp_bus_{old}"
-                state = self.hass.states.get(entity_id)
-
-                if state and state.state != "not_home":
-                    self.hass.states.async_set(entity_id, "not_home", state.attributes)
-
-            self.known = current
-
-        except Exception as e:
-            _LOGGER.error("Klaipėdos transporto klaida: %s", e)
-
-    def _fetch(self):
-        req = urllib.request.Request(
-            f"{URL}?t={int(time.time())}",
-            headers={"User-Agent": "Mozilla/5.0"},
-        )
-
-        with urllib.request.urlopen(req, timeout=10) as r:
-            return r.read().decode("utf-8")
+def get_optimized_bus_data():
+    url = "https://www.stops.lt/klaipeda/gps_full.txt"
+    response = requests.get(url)
+    lines = response.text.splitlines()
+    
+    buses = []
+    
+    for line in lines:
+        if not line: continue
+        
+        # Skaidome eilutę (CSV formatas)
+        data = line.split(',')
+        
+        # Pagrindiniai laukai
+        transport_type = data[0]  # Autobusai / Maršrutiniai taksi
+        route_num = data[1]       # Pvz: "8" (Tai rodysime žemėlapyje)
+        vehicle_id = data[3].replace(" ", "_").lower() # Pvz: "21_kwmt" (Unikalus ID)
+        
+        # Sukuriame unikalų ID sistemai
+        # Pridedame prefix'ą, kad būtų lengviau filtruoti/šalinti per UI
+        unique_entity_id = f"klaipeda_bus_{vehicle_id}"
+        
+        bus_entry = {
+            "unique_id": unique_entity_id,  # Sisteminį ID HA naudos integracijos valdymui
+            "route": route_num,            # Žemėlapio etiketei (Label)
+            "lat": float(data[5]) / 1000000,
+            "lon": float(data[4]) / 1000000,
+            "speed": data[6],
+            "bearing": data[7],
+            "friendly_name": f"Maršrutas {route_num}" # HA rodys šį pavadinimą
+        }
+        
+        buses.append(bus_entry)
+        
+    return buses
