@@ -1,64 +1,130 @@
 import logging
-import urllib.request
-import time
+import requests
 from datetime import timedelta
-from homeassistant.helpers.event import async_track_time_interval
+
+from homeassistant.components.device_tracker import SOURCE_TYPE_GPS
+from homeassistant.components.device_tracker.config_entry import TrackerEntity
+from homeassistant.helpers.update_coordinator import (
+    CoordinatorEntity,
+    DataUpdateCoordinator,
+)
+from homeassistant.core import callback
+
+DOMAIN = "klaipedos_transport"
+API_URL = "https://www.stops.lt/klaipeda/gps_full.php"
+SCAN_INTERVAL = timedelta(seconds=15)
 
 _LOGGER = logging.getLogger(__name__)
-URL = "https://www.stops.lt/klaipeda/gps_full.txt"
 
-async def async_setup_entry(hass, entry, async_add_entities):
-    """Ši funkcija paleidžiama, kai HA krauna device_tracker platformą."""
-    route = entry.data.get("route", "3G").upper()
-    
-    # Sukuriame valdytoją, kuris tiesiogiai atnaujins būsenas
-    tracker_manager = KlaipedaTrackerManager(hass, route)
-    
-    async_track_time_interval(hass, tracker_manager.update_data, timedelta(seconds=30))
-    await tracker_manager.update_data()
-    
-    return True
 
-class KlaipedaTrackerManager:
-    def __init__(self, hass, route):
-        self.hass = hass
-        self.route = route
+async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
+    """Set up bus GPS trackers filtered by specific route."""
+    
+    route_filter = str(config.get("route_id"))
+    if not route_filter:
+        _LOGGER.error("Route ID missing in config!")
+        return
 
-    async def update_data(self, now=None):
+    coordinator = BusGPSCoordinator(hass, route_filter)
+    await coordinator.async_config_entry_first_refresh()
+
+    trackers = []
+
+    for bus in coordinator.data:
+        trackers.append(
+            BusGPSEntity(
+                coordinator,
+                bus_id=bus["bus_id"],
+                route=bus["route"],
+                lat=bus["lat"],
+                lon=bus["lon"],
+            )
+        )
+
+    async_add_entities(trackers, True)
+
+
+class BusGPSCoordinator(DataUpdateCoordinator):
+    """Fetch filtered bus GPS location for one specific route."""
+
+    def __init__(self, hass, route_id):
+        super().__init__(
+            hass,
+            _LOGGER,
+            name=f"klaipeda_bus_route_{route_id}",
+            update_interval=SCAN_INTERVAL,
+        )
+        self.route_filter = route_id
+
+    async def _async_update_data(self):
+        """Fetch and filter GPS markers."""
+
         try:
-            # Duomenų gavimas
-            text = await self.hass.async_add_executor_job(self._fetch)
-            if not text: return
+            r = requests.get(API_URL, timeout=5)
+            data = r.json()
 
-            lines = text.splitlines()
-            found = [l.split(",") for l in lines if len(l.split(",")) >= 6 and l.split(",")[1].upper() == self.route]
+            gps_list = []
 
-            for i in range(15): # Stebime iki 15 autobusų
-                dev_id = f"klp_{self.route.lower()}_{i+1}"
-                if i < len(found):
-                    bus = found[i]
-                    self.hass.states.async_set(
-                        f"device_tracker.{dev_id}",
-                        "home",
-                        {
-                            "latitude": int(bus[5])/1000000,
-                            "longitude": int(bus[4])/1000000,
-                            "source_type": "gps",
-                            "friendly_name": f"{self.route} Autobusas {i+1}",
-                            "icon": "mdi:bus",
-                            "masinos_nr": bus[3]
-                        }
-                    )
-                else:
-                    # Jei autobuso nėra, bet esybė egzistuoja - pažymime, kad nebevažiuoja
-                    state = self.hass.states.get(f"device_tracker.{dev_id}")
-                    if state and state.state != "not_home":
-                        self.hass.states.async_set(f"device_tracker.{dev_id}", "not_home", state.attributes)
+            for m in data.get("markers", []):
+                if str(m.get("route_id")) != self.route_filter:
+                    continue  # skip other routes
+
+                gps_list.append(
+                    {
+                        "bus_id": m.get("code"),
+                        "route": m.get("route_id"),
+                        "lat": float(m.get("lat")),
+                        "lon": float(m.get("lng")),
+                    }
+                )
+
+            return gps_list
+
         except Exception as e:
-            _LOGGER.error("Klaida: %s", e)
+            _LOGGER.error("GPS fetch error: %s", e)
+            return []
 
-    def _fetch(self):
-        req = urllib.request.Request(f"{URL}?t={int(time.time())}", headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=5) as r:
-            return r.read().decode("utf-8")
 
+class BusGPSEntity(CoordinatorEntity, TrackerEntity):
+    """GPS entity for each moving bus on selected route."""
+
+    def __init__(self, coordinator, bus_id, route, lat, lon):
+        super().__init__(coordinator)
+
+        self._bus_id = bus_id
+        self._route = route
+        self._lat = lat
+        self._lon = lon
+
+        self._attr_name = f"Bus {route} #{bus_id}"
+        self._attr_unique_id = f"klaipeda_route_{route}_bus_{bus_id}".lower()
+        self._attr_source_type = SOURCE_TYPE_GPS
+
+    @property
+    def latitude(self):
+        return self._lat
+
+    @property
+    def longitude(self):
+        return self._lon
+
+    @callback
+    def _handle_coordinator_update(self):
+        """Update GPS coords from coordinator."""
+        for bus in self.coordinator.data:
+            if bus["bus_id"] == self._bus_id:
+                self._lat = bus["lat"]
+                self._lon = bus["lon"]
+                break
+
+        self.async_write_ha_state()
+
+    @property
+    def device_info(self):
+        """Each bus is its own device."""
+        return {
+            "identifiers": {(DOMAIN, f"bus_{self._bus_id}")},
+            "name": f"Klaipėdos autobusas #{self._bus_id}",
+            "manufacturer": "Klaipėdos transportas",
+            "model": f"Route {self._route}",
+        }
